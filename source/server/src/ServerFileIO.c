@@ -9,8 +9,6 @@
 
 
 // Global variable
-
-//const char *originalfilename = "test.txt";
 const char *originalfilename = "test.txt";
 const char *compressedfilename = "test.gz";
 const char *no_file = "local file not exist!";
@@ -174,7 +172,6 @@ int ReceiveFileStatus(int socket)
 	int bitmapindex = 0;
 	int bitindex = 7;
 	int result;
-	char updateind = 0;
 	int clientmd5length, restmd5length;
 	int serverchunknum;
 
@@ -187,7 +184,7 @@ int ReceiveFileStatus(int socket)
 	bitmaplength = ((file_size / MAX_LINE) / 8) + 1;
 	printf("bitmaplength is %d\n", bitmaplength);
 	bitmap_buf = malloc(bitmaplength);
-	memset(bitmap_buf, bitmaplength, 0);
+	bzero(bitmap_buf, bitmaplength);
 	
 
 	// Open the file
@@ -271,14 +268,13 @@ int ReceiveFileStatus(int socket)
 					if(md5buf[j] != recvbuf[j + (i * 16)])
 					{	
 						// If MD5 mismatch, record in bitmap
-						updateind = 1;
 						*(bitmap_buf + bitmapindex) |= (0x1<<bitindex); 
 						break;
 					}
 				}
 				
 				bitindex -= 1;
-				if(0 == bitindex)
+				if(-1 == bitindex)
 				{
 					bitindex = 7;
 					bitmapindex++;
@@ -301,7 +297,7 @@ int ReceiveFileStatus(int socket)
 		{
 			*(bitmap_buf + bitmapindex) |= (0x1<<bitindex); 
 			bitindex -= 1;
-			if(0 == bitindex)
+			if(-1 == bitindex)
 			{
 				bitindex = 7;
 				bitmapindex++;
@@ -310,8 +306,14 @@ int ReceiveFileStatus(int socket)
 		
 		// Send bitmap information
 		printf("Send bitmap information....\n");
-		printf("%d", *bitmap_buf);
-		sendlength = send(socket, bitmap_buf, bitmaplength + 1, 0);
+		for(i = 0; i < bitmaplength; i++)
+		{
+			printf("%8x ", bitmap_buf[i]);
+			if( i == (bitmaplength - 1))
+				printf("\n");
+		}		
+		printf("\n");
+		sendlength = send(socket, bitmap_buf, bitmaplength, 0);
 		if(FALSE == sendlength)
 		{
 			ErrorReport(SEND_DATA_ERR);
@@ -357,6 +359,11 @@ int SendUpdateData(int socket)
 		for(j = 7; j >= 0; j--)
 		{
 			updatestatus = (*(bitmap_buf + i)>>j) & 0x1;
+			printf("%d ", updatestatus);
+			if(j == 0)
+			{
+				printf("\n");
+			}
 			if(updatestatus == 1)
 			{
 				lseek(fd, ((i * 8) + (7 - j))* MAX_LINE, SEEK_SET);
@@ -369,6 +376,7 @@ int SendUpdateData(int socket)
 					free(bitmap_buf);
 					return FALSE;
 				}
+				printf("send=%d ", readlength);
 				sendlength = send(socket, buf, readlength, 0);
 				if(FALSE == sendlength)
 				{
@@ -381,6 +389,7 @@ int SendUpdateData(int socket)
 			
 		}
 	}
+	printf("\nUpdate data send done!\n");
 	free(bitmap_buf);
 	close(fd);
 	

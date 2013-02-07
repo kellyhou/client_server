@@ -8,7 +8,6 @@
 #include "ClientMacro.h"
 
 // Global variable
-//const char *clientfilename = "client.txt";
 const char *clientfilename = "client.txt";
 const char *compressedfilename = "client.gz";
 const char *bitmap = "bitmap";
@@ -62,6 +61,7 @@ int ReceiveFileData(int socket)
 	// Receive file data, one chunck at a time
 	bzero(buf, MAX_LINE);
     recvlength = recv(socket, buf, MAX_LINE, 0);
+    printf("recvlength=%d\n", recvlength);
     while(recvlength)
     {
 
@@ -87,6 +87,7 @@ int ReceiveFileData(int socket)
 		// Fresh buffer, receive new chunk
 		bzero(buf, MAX_LINE);
     	recvlength = recv(socket, buf, MAX_LINE, 0);
+    	printf("recvlength=%d\n", recvlength);
     }
 	close(fd);
    
@@ -285,7 +286,16 @@ int ReceiveBitmapData(int socket)
 		close(fb);
 		return FALSE;
 	}
-	printf("%d\n", *data_buf);
+	// printf bitmap
+	int i;
+	for(i = 0; i < bitmaplength; i++)
+	{
+		printf("%8x ", data_buf[i]);
+		if( i == (bitmaplength - 1))
+			printf("\n");
+	}		
+	printf("\n");
+
 	writelength = write(fb, data_buf, readlength);
 	if(FALSE == writelength)
 	{
@@ -318,8 +328,6 @@ int ReceiveFileUpdate(int socket)
 {
 	int fb,fd;
 	int i,j;
-	int bitindex = 7;
-	int bitmapindex = 0;
 	char data_buf[MAX_LINE];
 	char bitmap_buf[bitmaplength];
 	int readlength, writelength;
@@ -349,54 +357,67 @@ int ReceiveFileUpdate(int socket)
 		close(fd);
 		return FALSE;
 	}
-	// Incremental update, receive updated file chunks
-	bzero(data_buf, MAX_LINE);
-	readlength = recv(socket, data_buf, MAX_LINE, 0);
-	i = 0;
-	j = 7;
-	while(readlength)
+	// Close bitmap file
+	close(fb);
+
+	// printf bitmap
+	printf("Bitmap is: bitmaplength = %d\n", bitmaplength);
+	for(i = 0; i < bitmaplength; i++)
 	{
-		if(FALSE == readlength)
+		printf("%8x ", bitmap_buf[i]);
+		if( i == (bitmaplength - 1))
+			printf("\n");
+	}		
+	printf("\n");
+
+	// Incremental update, receive updated file chunks
+	printf("Begin receive update data....\n");
+	// Get bitmap status, if 1-chunk update, 0-no update
+	for(i = 0; i < bitmaplength; i++)
+	{
+		for(j = 7; j >= 0; j--)
 		{
-			// Receive data, error report, close files
-			ErrorReport(RECEIVE_DATA_ERR);
-			close(fb);
-			close(fd);
-			return FALSE;
-		}
-		// Get bitmap status, if 1-chunk update, 0-no update
-		for(i = bitmapindex; i < bitmaplength; i++)
-		{
-			for(j = bitindex; j >= 0; j--)
+			updatestatus = (bitmap_buf[i]>>j) & 0x1;
+			printf("%d ", updatestatus);
+			if(j == 0)
 			{
-				updatestatus = (bitmap_buf[i]>>j) & 0x1;
-				if(1 == updatestatus)
-				{
-					bitmapindex = i;
-					bitindex =j;
-					break;
-				}
+				printf("\n");
 			}
+
 			if(1 == updatestatus)
 			{
-				break;
+				int tmp_recvlength;
+				bzero(data_buf, MAX_LINE);
+				readlength = 0;
+				while(readlength < MAX_LINE && tmp_recvlength != 0)
+				{	
+					tmp_recvlength = 0;					
+					tmp_recvlength = recv(socket, data_buf + readlength, MAX_LINE - readlength, 0);
+					//printf("tmp_recvlength=%d\n", tmp_recvlength);
+					if(FALSE == tmp_recvlength)
+					{
+						// Receive data, error report, close files
+						ErrorReport(RECEIVE_DATA_ERR);
+						close(fd);
+						return FALSE;
+					}
+					readlength = readlength + tmp_recvlength;
+				}
+				lseek(fd, ((i * 8) + (7 - j))* MAX_LINE, SEEK_SET);
+				printf("write=%d ", readlength);
+				writelength = write(fd, data_buf, readlength);
+				if(FALSE == writelength)
+				{
+					// Write original file fail, error report, close files
+					ErrorReport(FILE_WRITE_ERR);
+					close(fd);
+					return FALSE;
+				}				
 			}
+
 		}
-		lseek(fd, ((bitmapindex * 8) + (7 - bitindex))* MAX_LINE, SEEK_SET);
-		writelength = write(fd, data_buf, readlength);
-		if(FALSE == writelength)
-		{
-			// Write original file fail, error report, close files
-			ErrorReport(FILE_WRITE_ERR);
-			close(fb);
-			close(fd);
-			return FALSE;
-		}
-		// Fresh buffer, receive new chunk
-		bzero(data_buf, MAX_LINE);
-		readlength = recv(socket, data_buf, MAX_LINE, 0);
 	}
-	close(fb);
+	
 	close(fd);
 	// Update finish, remove bitmap file
 	remove(bitmap);

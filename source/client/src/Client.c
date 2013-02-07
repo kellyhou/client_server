@@ -87,6 +87,7 @@ int main(int argc,char **argv)
 		}
 		
 		// Receive file updata chunks, updata file 
+		printf("Begin receiving update data....\n");
 		result = ReceiveFileUpdate(socket_fd);
 		if(FALSE == result)
 		{
